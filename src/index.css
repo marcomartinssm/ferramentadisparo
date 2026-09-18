@@ -1,0 +1,366 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 217.2 32.6% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 217.2 32.6% 10%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 187 85% 53%;
+    --primary-foreground: 222.2 84% 4.9%;
+
+    --secondary: 217.2 32.6% 14%;
+    --secondary-foreground: 215 20.2% 65.1%;
+
+    --muted: 217.2 32.6% 12%;
+    --muted-foreground: 215 20.2% 55%;
+
+    --accent: 263 70% 50%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 14%;
+    --input: 217.2 32.6% 16%;
+    --ring: 187 85% 53%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 222.2 84% 3.5%;
+    --sidebar-foreground: 215 20.2% 55%;
+    --sidebar-primary: 187 85% 53%;
+    --sidebar-primary-foreground: 222.2 84% 4.9%;
+    --sidebar-accent: 217.2 32.6% 10%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 12%;
+    --sidebar-ring: 187 85% 53%;
+
+    /* Custom tokens */
+    --success: 142 60% 45%;
+    --success-foreground: 220 20% 7%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 20% 7%;
+    --info: 210 80% 55%;
+    --info-foreground: 220 20% 7%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(187 85% 53%), hsl(172 66% 40%));
+    --gradient-card: linear-gradient(145deg, hsl(217.2 32.6% 9%), hsl(217.2 32.6% 7%));
+    --gradient-hero: linear-gradient(135deg, hsl(187 85% 53% / 0.15), hsl(222.2 84% 4.9%));
+
+    --shadow-glow: 0 0 20px hsl(187 85% 53% / 0.15);
+    --shadow-card: 0 4px 24px hsl(0 0% 0% / 0.3);
+    --shadow-elevated: 0 8px 32px hsl(0 0% 0% / 0.4);
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  code, pre {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(217.2 32.6% 8%);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(217.2 32.6% 20%);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(217.2 32.6% 28%);
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/50 border border-border rounded-2xl backdrop-blur-sm;
+    box-shadow: var(--shadow-card);
+  }
+
+  .glass-card:hover {
+    border-color: hsl(var(--primary) / 0.2);
+  }
+
+  .glow-border {
+    @apply border border-primary/20;
+    box-shadow: 0 0 15px hsl(var(--primary) / 0.15);
+  }
+
+  .stat-value {
+    @apply text-3xl font-bold tracking-tight text-foreground;
+  }
+
+  .stat-label {
+    @apply text-sm font-medium text-muted-foreground;
+  }
+
+  .pulse-dot {
+    @apply w-2 h-2 rounded-full bg-primary;
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .sidebar-item {
+    @apply relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground transition-all duration-200;
+  }
+
+  .sidebar-item:hover {
+    @apply bg-sidebar-accent text-sidebar-accent-foreground;
+  }
+
+  .sidebar-item.active {
+    @apply bg-primary/10 text-primary;
+  }
+
+  .sidebar-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 60%;
+    border-radius: 0 3px 3px 0;
+    background: hsl(var(--primary));
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.5);
+  }
+
+  .badge-status {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  /* TipTap editor styles */
+  .variation-chip {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded-md border text-sm font-medium cursor-pointer transition-colors;
+    background-color: hsl(var(--accent) / 0.15);
+    border-color: hsl(var(--accent) / 0.4);
+    color: hsl(var(--accent-foreground));
+  }
+  .variation-chip:hover {
+    background-color: hsl(var(--accent) / 0.3);
+  }
+
+  /* React Flow cursor overrides */
+  .react-flow {
+    cursor: default !important;
+  }
+  .react-flow__pane {
+    cursor: default !important;
+  }
+  .react-flow__pane.dragging {
+    cursor: grabbing !important;
+  }
+  .react-flow__node {
+    cursor: pointer !important;
+  }
+
+  .send-variable-chip {
+    @apply inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded border text-sm font-mono;
+    background-color: hsl(var(--primary) / 0.15);
+    border-color: hsl(var(--primary) / 0.3);
+    color: hsl(var(--primary));
+  }
+
+  .template-editor .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+    height: 0;
+  }
+}
+
+@layer utilities {
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 hsl(187 85% 53% / 0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px hsl(187 85% 53% / 0); }
+  }
+
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(-12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.4s ease-out forwards;
+  }
+
+  .animate-slide-in {
+    animation: slide-in-right 0.3s ease-out forwards;
+  }
+}
+
+/* ReactFlow Controls styling */
+.react-flow__controls {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px hsl(var(--background) / 0.5);
+}
+
+.react-flow__controls-button {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  fill: hsl(var(--foreground)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: hsl(var(--accent) / 0.15) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: hsl(var(--foreground)) !important;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+
+/* ── Help guide content ── */
+.help-guide-content {
+  color: hsl(var(--foreground) / 0.85);
+  line-height: 1.8;
+  font-size: 0.9rem;
+}
+
+.help-guide-content h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: hsl(var(--foreground));
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid hsl(var(--primary) / 0.3);
+}
+
+.help-guide-content h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.help-guide-content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.help-guide-content p {
+  margin-bottom: 1rem;
+}
+
+.help-guide-content strong {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.help-guide-content code {
+  background: hsl(var(--muted));
+  color: hsl(var(--primary));
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.help-guide-content hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 2rem 0;
+}
+
+.help-guide-content ul,
+.help-guide-content ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.help-guide-content li {
+  margin-bottom: 0.4rem;
+}
+
+.help-guide-content li::marker {
+  color: hsl(var(--primary));
+}
+
+.help-guide-content blockquote {
+  border-left: 3px solid hsl(var(--primary) / 0.4);
+  background: hsl(var(--primary) / 0.05);
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  border-radius: 0 6px 6px 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.help-guide-content blockquote p {
+  margin-bottom: 0;
+}
+
+.help-guide-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+}
+
+.help-guide-content thead {
+  background: hsl(var(--muted));
+}
+
+.help-guide-content th {
+  text-align: left;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.help-guide-content td {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.5);
+}
+
+.help-guide-content tbody tr:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+.help-guide-content a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
