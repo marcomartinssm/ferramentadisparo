@@ -18,6 +18,7 @@ import FlowEditor from "@/pages/FlowEditor";
 import CreateTemplate from "@/pages/CreateTemplate";
 import EditTemplate from "@/pages/EditTemplate";
 import Help from "@/pages/Help";
+import Conversations from "@/pages/Conversations";
 
 import NotFound from "./pages/NotFound";
 
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/contacts" element={<Contacts />} />
+            <Route path="/conversas" element={<Conversations />} />
             
             <Route path="/messages" element={<Messages />} />
             

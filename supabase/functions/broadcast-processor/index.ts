@@ -278,6 +278,9 @@ serve(async (req) => {
           sendPayload = {
             meta_connection_id: campaign.meta_connection_id,
             phone_number: normalizedPhone,
+            content: messageContent,
+            source: 'broadcast',
+            source_id: campaign_id,
             message_type: 'template',
             template_name: campaign.template_name,
             template_language: campaign.template_language || 'pt_BR',
@@ -289,6 +292,8 @@ serve(async (req) => {
             instance_id: campaign.instance_id,
             phone_number: normalizedPhone,
             content: messageContent,
+            source: 'broadcast',
+            source_id: campaign_id,
             message_type: sendMessageType,
             media_url: sendMediaUrl,
           };
@@ -305,24 +310,6 @@ serve(async (req) => {
           .update({ status: 'sent', sent_at: new Date().toISOString(), variation_indices: indices, sent_media_url: sendMediaUrl || null }).eq('id', recipient.id);
         sentCount++;
 
-        // Persist outbound message to conversation_messages for chat view
-        try {
-          const { data: contact } = await supabase
-            .from('contacts').select('id').eq('phone', normalizedPhone).limit(1).single();
-          if (contact) {
-            await supabase.from('conversation_messages').insert({
-              contact_id: contact.id,
-              direction: 'outbound',
-              content: isTemplate ? `[Template: ${campaign.template_name}]` : messageContent,
-              source: 'broadcast',
-              source_id: campaign_id,
-              instance_id: campaign.instance_id || null,
-              media_url: sendMediaUrl || null,
-            });
-          }
-        } catch (convErr) {
-          console.warn(`[broadcast-processor] Failed to save conversation message: ${convErr}`);
-        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         await supabase.from('broadcast_recipients')

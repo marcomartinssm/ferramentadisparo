@@ -35,6 +35,8 @@ Deno.serve(async (req) => {
       template_language,
       template_variables,
       header_media,
+      source = "flow",
+      source_id = null,
     } = await req.json();
 
     if (!phone_number) throw new Error("phone_number is required");
@@ -176,6 +178,27 @@ Deno.serve(async (req) => {
 
     const messageId = metaResult?.messages?.[0]?.id || null;
 
+    // Registra a mensagem enviada na conversa do contato (tela Conversas)
+    try {
+      const contactId = await encontrarOuCriarContato(supabase, cleanPhone);
+      if (contactId) {
+        await supabase.from("conversation_messages").insert({
+          contact_id: contactId,
+          direction: "outbound",
+          content: content || (template_name ? `[Template: ${template_name}]` : ""),
+          source,
+          source_id,
+          instance_id: instance_id || null,
+          media_url: header_media?.url || media_url || null,
+          message_id: messageId,
+          message_type,
+          status: "sent",
+        });
+      }
+    } catch (convErr) {
+      console.warn(`[send-meta-message] Falha ao registrar conversa: ${convErr}`);
+    }
+
     return new Response(
       JSON.stringify({ success: true, messageId, data: metaResult }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -189,3 +212,26 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+async function encontrarOuCriarContato(supabase: any, phone: string): Promise<string | null> {
+  const variants = new Set([phone, `+${phone}`]);
+  if (phone.startsWith("55") && phone.length >= 12) {
+    const ddd = phone.substring(2, 4);
+    const local = phone.substring(4);
+    if (local.length === 8) { variants.add(`55${ddd}9${local}`); variants.add(`+55${ddd}9${local}`); }
+    if (local.length === 9 && local.startsWith("9")) { variants.add(`55${ddd}${local.substring(1)}`); variants.add(`+55${ddd}${local.substring(1)}`); }
+  }
+  const { data: existente } = await supabase
+    .from("contacts")
+    .select("id")
+    .in("phone", Array.from(variants))
+    .limit(1)
+    .maybeSingle();
+  if (existente?.id) return existente.id;
+  const { data: novo } = await supabase
+    .from("contacts")
+    .insert({ name: phone, phone, status: "novo" })
+    .select("id")
+    .maybeSingle();
+  return novo?.id || null;
+}

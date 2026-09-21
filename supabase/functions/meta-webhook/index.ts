@@ -64,6 +64,20 @@ Deno.serve(async (req) => {
         const phoneNumberId = value.metadata?.phone_number_id || "";
         const messages = value.messages || [];
 
+        // ── STATUS DAS MENSAGENS ENVIADAS (enviada / entregue / lida / falhou) ──
+        for (const st of value.statuses || []) {
+          if (!st.id || !st.status) continue;
+          const erro = st.errors?.[0];
+          await supabase
+            .from("conversation_messages")
+            .update({
+              status: st.status,
+              ...(erro ? { error_message: traduzirErroMeta(erro) } : {}),
+            })
+            .eq("message_id", st.id)
+            .eq("direction", "outbound");
+        }
+
         for (const msg of messages) {
           const phone = msg.from; // sender phone (E.164 without +)
           const messageId = msg.id;
@@ -108,11 +122,28 @@ Deno.serve(async (req) => {
             textContent = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || "";
           }
 
+          if (!textContent) {
+            const rotulos: Record<string, string> = {
+              image: "[Imagem]", video: "[Vídeo]", audio: "[Áudio]", document: "[Documento]",
+              sticker: "[Figurinha]", location: "[Localização]", contacts: "[Contato]", reaction: "[Reação]",
+            };
+            textContent = rotulos[msg.type] || `[${msg.type}]`;
+          }
+
           console.log(`[meta-webhook] Message from ${phone}: "${textContent.substring(0, 80)}" (type: ${msg.type})`);
 
-          // ── FIND CONTACT ──
+          // ── FIND CONTACT (cria o contato se ainda não existir) ──
           const phoneVariants = buildPhoneVariants(phone);
-          const contactId = await findContactId(supabase, phoneVariants);
+          let contactId = await findContactId(supabase, phoneVariants);
+          if (!contactId) {
+            const perfil = (value.contacts || []).find((c: any) => c.wa_id === phone)?.profile?.name;
+            const { data: novo } = await supabase
+              .from("contacts")
+              .insert({ name: perfil || phone, phone, status: "novo", tags: ["whatsapp"] })
+              .select("id")
+              .maybeSingle();
+            contactId = novo?.id || await findContactId(supabase, phoneVariants);
+          }
 
           // ── PERSIST INBOUND MESSAGE ──
           if (contactId) {
@@ -122,6 +153,8 @@ Deno.serve(async (req) => {
               content: textContent,
               source: "meta_webhook",
               message_id: messageId,
+              message_type: msg.type,
+              status: "received",
             });
             console.log(`[meta-webhook] Saved inbound message for contact ${contactId}`);
           }
@@ -169,13 +202,27 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("[meta-webhook] Error:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
 
 // ── HELPERS ──────────────────────────────────────────────────────────
+
+// Explica em português os erros de entrega mais comuns da Meta
+function traduzirErroMeta(erro: any): string {
+  const codigos: Record<number, string> = {
+    131047: "Fora da janela de 24h: o cliente não respondeu nas últimas 24 horas. Use um template.",
+    131026: "Número sem WhatsApp ou não pode receber mensagens.",
+    131049: "A Meta segurou esta mensagem de marketing para não cansar o cliente.",
+    131050: "O cliente bloqueou mensagens de marketing.",
+    131051: "Tipo de mensagem não suportado.",
+    132000: "Quantidade de variáveis diferente da aprovada no template.",
+    132001: "Template não existe ou ainda não foi aprovado.",
+  };
+  return codigos[erro?.code] || erro?.error_data?.details || erro?.message || erro?.title || "Falha na entrega";
+}
 
 function buildPhoneVariants(phone: string): string[] {
   const clean = phone.replace(/\D/g, "");

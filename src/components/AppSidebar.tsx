@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LogOut,
   LayoutDashboard, Users, Megaphone, Zap, FileText,
-  Smartphone, ChevronLeft, GitBranch, HelpCircle
+  Smartphone, ChevronLeft, GitBranch, HelpCircle, MessageCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -31,6 +31,7 @@ const navGroups = [
     label: "Contatos",
     icon: Users,
     items: [
+      { path: "/conversas", label: "Conversas", icon: MessageCircle },
       { path: "/contacts", label: "Contatos", icon: Users },
     ],
   },
