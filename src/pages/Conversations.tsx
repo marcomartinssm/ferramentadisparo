@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Check, CheckCheck, AlertCircle, Clock, Loader2, MessageCircle, Search } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, CheckCheck, AlertCircle, Clock, Loader2, MessageCircle, Search, Send } from "lucide-react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +33,42 @@ interface Mensagem {
   created_at: string;
 }
 
+interface TemplateAprovado {
+  id: string;
+  name: string;
+  language: string;
+  components: any[];
+}
+
 const JANELA_MS = 24 * 3600_000;
+
+// Só templates sem variáveis ({{1}}) podem ser enviados daqui, porque não há como preencher os valores
+function templateSemVariaveis(t: TemplateAprovado) {
+  const body = (t.components || []).find((c: any) => c.type === "BODY");
+  return !/\{\{\d+\}\}/.test(body?.text || "");
+}
+
+function textoDoTemplate(t: TemplateAprovado) {
+  return (t.components || []).find((c: any) => c.type === "BODY")?.text || `[Template: ${t.name}]`;
+}
+
+function midiaDoCabecalho(t: TemplateAprovado) {
+  const h = (t.components || []).find((c: any) => c.type === "HEADER");
+  if (h && ["IMAGE", "VIDEO", "DOCUMENT"].includes(h.format) && h.mediaUrl) {
+    return { type: h.format.toLowerCase(), url: h.mediaUrl };
+  }
+  return undefined;
+}
+
+// Lê o motivo real do erro devolvido pela função de envio
+async function motivoDoErro(error: any) {
+  try {
+    const body = await error?.context?.json();
+    return body?.error || error.message;
+  } catch {
+    return error?.message || "Erro ao enviar";
+  }
+}
 const ATUALIZAR_MS = 10_000;
 
 function horario(iso: string) {
@@ -71,6 +110,37 @@ export default function Conversations() {
   const [busca, setBusca] = useState("");
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const [texto, setTexto] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  // Canal usado para responder: o padrão ativo
+  const { data: canal } = useQuery({
+    queryKey: ["canal-padrao"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("whatsapp_instances")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("is_default", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ["templates-aprovados"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("meta_templates")
+        .select("id, name, language, components")
+        .eq("status", "APPROVED")
+        .order("name");
+      return ((data ?? []) as unknown as TemplateAprovado[]).filter(templateSemVariaveis);
+    },
+  });
 
   const { data: conversas = [], isLoading } = useQuery({
     queryKey: ["conversas"],
@@ -117,6 +187,45 @@ export default function Conversations() {
   useEffect(() => {
     fimRef.current?.scrollIntoView({ block: "end" });
   }, [mensagens.length, selecionada]);
+
+  useEffect(() => {
+    setTexto("");
+    setTemplateId("");
+  }, [selecionada]);
+
+  const enviar = async () => {
+    if (!atual || !canal) return;
+    const podeTexto = janela(atual.ultima_do_cliente_em).aberta;
+    let corpo: Record<string, unknown>;
+    if (podeTexto) {
+      if (!texto.trim()) return;
+      corpo = { instance_id: canal.id, phone_number: atual.phone, content: texto.trim(), message_type: "text", source: "manual" };
+    } else {
+      const t = templates.find((x) => x.id === templateId);
+      if (!t) return;
+      corpo = {
+        instance_id: canal.id,
+        phone_number: atual.phone,
+        message_type: "template",
+        template_name: t.name,
+        template_language: t.language || "pt_BR",
+        header_media: midiaDoCabecalho(t),
+        content: textoDoTemplate(t),
+        source: "manual",
+      };
+    }
+    setEnviando(true);
+    const { error } = await supabase.functions.invoke("send-meta-message", { body: corpo });
+    setEnviando(false);
+    if (error) {
+      toast.error(await motivoDoErro(error));
+      return;
+    }
+    setTexto("");
+    setTemplateId("");
+    queryClient.invalidateQueries({ queryKey: ["conversa", selecionada] });
+    queryClient.invalidateQueries({ queryKey: ["conversas"] });
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] animate-fade-in-up">
@@ -233,6 +342,7 @@ export default function Conversations() {
                         <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-muted-foreground">
                           {minha && m.source === "broadcast" && <span>Campanha ·</span>}
                           {minha && m.source === "flow" && <span>Fluxo ·</span>}
+                          {minha && m.source === "manual" && <span>Você ·</span>}
                           <span>{horario(m.created_at)}</span>
                           {minha && <StatusEnvio status={m.status} />}
                         </div>
@@ -245,6 +355,55 @@ export default function Conversations() {
                 })}
                 <div ref={fimRef} />
               </div>
+
+              {/* Responder */}
+              <footer className="border-t border-border p-3 bg-card">
+                {!canal ? (
+                  <p className="text-xs text-muted-foreground">Cadastre um canal em Canais de WhatsApp para responder.</p>
+                ) : statusJanela?.aberta ? (
+                  <div className="flex items-end gap-2">
+                    <Textarea
+                      value={texto}
+                      onChange={(e) => setTexto(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          enviar();
+                        }
+                      }}
+                      placeholder="Digite sua resposta (Enter envia, Shift+Enter pula linha)"
+                      className="min-h-[44px] max-h-40 resize-none text-sm"
+                      rows={1}
+                    />
+                    <Button onClick={enviar} disabled={enviando || !texto.trim()} className="h-11 gap-1.5">
+                      {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      Enviar
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      O cliente não respondeu nas últimas 24 horas. A Meta só permite enviar um template aprovado.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Select value={templateId} onValueChange={setTemplateId}>
+                        <SelectTrigger className="h-10 flex-1">
+                          <SelectValue placeholder={templates.length ? "Escolha um template aprovado" : "Nenhum template aprovado sem variáveis"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button onClick={enviar} disabled={enviando || !templateId} className="h-10 gap-1.5">
+                        {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                        Enviar template
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </footer>
             </>
           )}
         </section>
