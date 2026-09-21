@@ -235,50 +235,64 @@ async function uploadMediaToMeta(
   mediaUrl: string,
   format: string,
   accessToken: string,
-  wabaId: string
+  _wabaId: string
 ): Promise<string> {
-  // Download the file
+  // Baixa o arquivo que foi enviado no cabeçalho
   const fileResponse = await fetch(mediaUrl);
+  if (!fileResponse.ok) {
+    throw new Error(`Não foi possível baixar o arquivo do cabeçalho (HTTP ${fileResponse.status})`);
+  }
   const fileBlob = await fileResponse.blob();
 
-  const mimeMap: Record<string, string> = {
-    IMAGE: "image/png",
+  const fallbackMime: Record<string, string> = {
+    IMAGE: "image/jpeg",
     VIDEO: "video/mp4",
     DOCUMENT: "application/pdf",
   };
-  const mime = mimeMap[format] || "application/octet-stream";
+  // Usa o tipo real do arquivo (JPG, PNG...) em vez de assumir sempre PNG
+  const mime = (fileBlob.type || fileResponse.headers.get("content-type") || fallbackMime[format] || "application/octet-stream")
+    .split(";")[0].trim();
+  const fileName = decodeURIComponent(new URL(mediaUrl).pathname.split("/").pop() || "arquivo");
 
-  // Create upload session
-  const sessionRes = await fetch(
-    `${GRAPH_API}/${wabaId}/uploads?file_type=${mime}&file_length=${fileBlob.size}`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
-  );
+  // A sessão de upload da Meta precisa ser aberta no ID do App (não no ID da conta WhatsApp)
+  const appRes = await fetch(`${GRAPH_API}/app`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const appData = await appRes.json();
+  if (!appData?.id) {
+    throw new Error(`Falha ao identificar o App da Meta: ${metaErrorMessage(appData, "token sem App associado")}`);
+  }
+
+  const sessionParams = new URLSearchParams({
+    file_name: fileName,
+    file_length: String(fileBlob.size),
+    file_type: mime,
+  });
+  const sessionRes = await fetch(`${GRAPH_API}/${appData.id}/uploads?${sessionParams}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   const sessionData = await sessionRes.json();
 
   if (!sessionData.id) {
-    throw new Error("Falha ao criar sessão de upload na Meta");
+    console.error("Meta upload session:", JSON.stringify(sessionData));
+    throw new Error(`Falha ao criar sessão de upload na Meta: ${metaErrorMessage(sessionData, "sem detalhes")}`);
   }
 
-  // Upload file bytes
-  const uploadRes = await fetch(
-    `${GRAPH_API}/${sessionData.id}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `OAuth ${accessToken}`,
-        "Content-Type": mime,
-        file_offset: "0",
-      },
-      body: fileBlob,
-    }
-  );
+  // Envia o arquivo
+  const uploadRes = await fetch(`${GRAPH_API}/${sessionData.id}`, {
+    method: "POST",
+    headers: {
+      Authorization: `OAuth ${accessToken}`,
+      file_offset: "0",
+    },
+    body: fileBlob,
+  });
   const uploadData = await uploadRes.json();
 
   if (!uploadData.h) {
-    throw new Error("Falha ao fazer upload do arquivo na Meta");
+    console.error("Meta upload:", JSON.stringify(uploadData));
+    throw new Error(`Falha ao fazer upload do arquivo na Meta: ${metaErrorMessage(uploadData, "sem detalhes")}`);
   }
 
   return uploadData.h;
