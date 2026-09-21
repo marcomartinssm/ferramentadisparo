@@ -162,13 +162,14 @@ Deno.serve(async (req) => {
       metaResult = await metaResponse.json();
 
       if (!metaResponse.ok) {
-        return new Response(JSON.stringify({ error: metaResult?.error?.message || "Erro ao submeter template (retry)" }), {
+        return new Response(JSON.stringify({ error: metaErrorMessage(metaResult, "Erro ao submeter template (retry)") }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     } else if (!metaResponse.ok) {
-      return new Response(JSON.stringify({ error: metaResult?.error?.message || "Erro ao submeter template à Meta" }), {
+      console.error("Meta recusou o template:", JSON.stringify(metaResult));
+      return new Response(JSON.stringify({ error: metaErrorMessage(metaResult, "Erro ao submeter template à Meta") }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -221,6 +222,14 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+// A Meta manda um texto genérico em "message" e o motivo real em "error_user_title"/"error_user_msg"
+function metaErrorMessage(metaResult: any, fallback: string): string {
+  const e = metaResult?.error;
+  if (!e) return fallback;
+  const detail = [e.error_user_title, e.error_user_msg].filter(Boolean).join(": ");
+  return detail || e.message || fallback;
+}
 
 async function uploadMediaToMeta(
   mediaUrl: string,

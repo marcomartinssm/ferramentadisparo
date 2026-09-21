@@ -74,7 +74,15 @@ export function StepReview() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // A mensagem real (ex.: motivo da recusa da Meta) vem no corpo da resposta
+        let detail = '';
+        try {
+          const body = await (error as any).context?.json();
+          detail = body?.error || '';
+        } catch { /* corpo não era JSON */ }
+        throw new Error(detail || error.message);
+      }
       if (data?.error) throw new Error(data.error);
 
       toast.success(state.isEditing
