@@ -27,7 +27,7 @@ export default function FlowNodeCard({ id, data, selected }: NodeProps) {
   const subtitle =
     config.label ||
     (nodeType === "trigger" ? triggerLabels[config.trigger_type || "message_received"] : "") ||
-    config.content?.substring(0, 40) ||
+    (config.message_mode === "text" ? config.text_content : config.content)?.substring(0, 40) ||
     (nodeType === "delay" ? `${config.duration || "?"} ${config.unit || "min"}` : "") ||
     info.label;
 

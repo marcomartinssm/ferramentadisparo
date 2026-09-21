@@ -101,8 +101,10 @@ Deno.serve(async (req) => {
 
       // ── MESSAGE ──
       else if (nodeType === "message") {
-        const contentType = config.content_type || "text";
-        const rawContent = config.content || "";
+        // Cards antigos com template e sem modo definido continuam como template
+        const mode = config.message_mode || (config.template_id ? "template" : "text");
+        const contentType = mode === "template" ? "template" : (config.content_type || "text");
+        const rawContent = mode === "template" ? (config.content || "") : (config.text_content ?? config.content ?? "");
         const finalContent = replaceVariables(resolveSpintax(rawContent), variables);
         const phone = variables.phone;
 
@@ -112,8 +114,15 @@ Deno.serve(async (req) => {
           // Find which instance to use - check if there's one in variables (from campaign) or use default
           const instanceId = variables.instance_id || await getDefaultInstanceId(supabase);
 
+          const foraDaJanela = mode === "text" && !(await clienteFalouNasUltimas24h(supabase, phone));
+
           if (!instanceId) {
             await logStep(supabase, execution_id, node.id, "message_error", { reason: "no instance available" });
+          } else if (foraDaJanela) {
+            // A Meta aceitaria o envio mas não entregaria: texto livre só vale até 24h após a última mensagem do cliente
+            await logStep(supabase, execution_id, node.id, "message_skipped", {
+              reason: "Fora da janela de 24h: o cliente não mandou mensagem nas últimas 24 horas. Use um template.",
+            });
           } else {
             // Send via send-meta-message edge function
             const sendPayload: Record<string, any> = {
@@ -124,14 +133,38 @@ Deno.serve(async (req) => {
             };
             if (config.media_url) sendPayload.media_url = config.media_url;
 
+            if (mode === "template") {
+              // Template aprovado: funciona mesmo fora da janela de 24h
+              const tpl = await getTemplateForSend(supabase, config.template_id);
+              if (!tpl) {
+                await logStep(supabase, execution_id, node.id, "message_error", { reason: "template não encontrado" });
+                await supabase.from("flow_executions").update({
+                  status: "failed",
+                  completed_at: new Date().toISOString(),
+                  variables: { ...variables, _error: "template_not_found" },
+                }).eq("id", execution_id);
+                return json({ ok: false, error: "template_not_found" });
+              }
+              sendPayload.template_name = tpl.name;
+              sendPayload.template_language = tpl.language;
+              if (tpl.header_media) sendPayload.header_media = tpl.header_media;
+              const bodyVars = tpl.body_var_count > 0
+                ? Array.from({ length: tpl.body_var_count }, (_, i) => String(variables[`var${i + 1}`] ?? variables.nome ?? variables.name ?? "-"))
+                : [];
+              if (bodyVars.length) sendPayload.template_variables = { body: bodyVars };
+            }
+
             const { data: sendResult, error: sendErr } = await supabase.functions.invoke(
               "send-meta-message",
               { body: sendPayload }
             );
 
             if (sendErr) {
-              console.error(`[flow-executor] Send error:`, sendErr);
-              await logStep(supabase, execution_id, node.id, "message_error", { error: sendErr.message });
+              // O motivo real (ex.: fora da janela de 24h) vem no corpo da resposta
+              let detail = sendErr.message;
+              try { detail = (await sendErr.context?.json())?.error || detail; } catch { /* sem corpo */ }
+              console.error(`[flow-executor] Send error:`, detail);
+              await logStep(supabase, execution_id, node.id, "message_error", { error: detail, mode });
             } else {
               await logStep(supabase, execution_id, node.id, "message_sent", {
                 content_preview: finalContent.substring(0, 100),
@@ -743,6 +776,44 @@ function getNextNodeId(edges: any[], nodeId: string, handle: string | null): str
     return anyEdge?.target_node_id || null;
   }
   return edge.target_node_id;
+}
+
+// Toda mensagem recebida pelo webhook fica registrada em webhook_message_dedup (telefone + horário)
+async function clienteFalouNasUltimas24h(supabase: any, phone: string): Promise<boolean> {
+  const clean = String(phone).replace(/\D/g, "");
+  const variants = new Set([clean]);
+  if (clean.startsWith("55") && clean.length >= 12) {
+    const ddd = clean.substring(2, 4);
+    const local = clean.substring(4);
+    if (local.length === 8) variants.add(`55${ddd}9${local}`);
+    if (local.length === 9 && local.startsWith("9")) variants.add(`55${ddd}${local.substring(1)}`);
+  }
+  const desde = new Date(Date.now() - 24 * 3600_000).toISOString();
+  const { data } = await supabase
+    .from("webhook_message_dedup")
+    .select("message_id")
+    .in("phone", Array.from(variants))
+    .gte("created_at", desde)
+    .limit(1);
+  return (data?.length || 0) > 0;
+}
+
+async function getTemplateForSend(supabase: any, templateId: string | undefined) {
+  if (!templateId) return null;
+  const { data } = await supabase
+    .from("meta_templates")
+    .select("name, language, components")
+    .eq("id", templateId)
+    .maybeSingle();
+  if (!data) return null;
+  const components: any[] = Array.isArray(data.components) ? data.components : [];
+  const header = components.find((c) => c.type === "HEADER");
+  const body = components.find((c) => c.type === "BODY");
+  const header_media = header && ["IMAGE", "VIDEO", "DOCUMENT"].includes(header.format) && header.mediaUrl
+    ? { type: header.format.toLowerCase(), url: header.mediaUrl }
+    : null;
+  const body_var_count = new Set((body?.text || "").match(/\{\{\d+\}\}/g) || []).size;
+  return { name: data.name, language: data.language || "pt_BR", header_media, body_var_count };
 }
 
 async function getDefaultInstanceId(supabase: any): Promise<string | null> {

@@ -69,53 +69,98 @@ export default function FlowNodeConfigPanel({ node, allNodes, onUpdate, onDelete
       </div>
 
       {/* Type-specific fields */}
-      {nodeType === "message" && (
+      {nodeType === "message" && (() => {
+        // Cards antigos com template e sem modo definido continuam como template
+        const mode: "template" | "text" = config.message_mode || (config.template_id ? "template" : "text");
+        return (
         <div className="space-y-3">
           <div>
-            <Label className="text-xs">Template de mensagem</Label>
-            <Select
-              value={config.template_id || ""}
-              onValueChange={(v) => {
-                const tpl = metaTemplates.find((t) => t.id === v);
-                if (tpl) {
-                  const bodyText = extractBodyText(tpl.components);
-                  onUpdate(node.id, {
-                    ...config,
-                    template_id: tpl.id,
-                    template_name: tpl.name,
-                    content: bodyText,
-                    content_type: "text",
-                  });
-                }
-              }}
-            >
-              <SelectTrigger className="h-8"><SelectValue placeholder="Selecione um template" /></SelectTrigger>
+            <Label className="text-xs">Tipo de mensagem</Label>
+            <Select value={mode} onValueChange={(v) => set("message_mode", v)}>
+              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {metaTemplates.length === 0 && (
-                  <SelectItem value="__empty" disabled>Nenhum template criado</SelectItem>
-                )}
-                {metaTemplates.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
-                    <span className="ml-2 text-muted-foreground text-[10px]">({t.category})</span>
-                  </SelectItem>
-                ))}
+                <SelectItem value="template">Template aprovado</SelectItem>
+                <SelectItem value="text">Texto livre</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {config.template_id && config.content && (
-            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
-              <p className="text-xs text-foreground whitespace-pre-wrap line-clamp-6">{config.content}</p>
-            </div>
+          {mode === "text" && (
+            <>
+              <div>
+                <Label className="text-xs">Mensagem</Label>
+                <Textarea
+                  value={config.text_content ?? ""}
+                  onChange={(e) => set("text_content", e.target.value)}
+                  placeholder={"Olá {{nome}}, tudo bem?"}
+                  className="min-h-[140px] text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Pode usar variáveis como {"{{nome}}"} e variações como {"{Oi|Olá}"}.
+                </p>
+              </div>
+              <div className="flex gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5">
+                <Info className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-foreground/80">
+                  A Meta só entrega texto livre se o cliente mandou mensagem nas <strong>últimas 24 horas</strong>.
+                  O prazo conta a partir da última mensagem <strong>do cliente</strong>, não da sua.
+                  Fora desse prazo, use um template.
+                </p>
+              </div>
+            </>
           )}
 
-          {!config.template_id && (
-            <p className="text-xs text-amber-500">Selecione um template para configurar esta mensagem.</p>
+          {mode === "template" && (
+            <>
+              <div>
+                <Label className="text-xs">Template de mensagem</Label>
+                <Select
+                  value={config.template_id || ""}
+                  onValueChange={(v) => {
+                    const tpl = metaTemplates.find((t) => t.id === v);
+                    if (tpl) {
+                      const bodyText = extractBodyText(tpl.components);
+                      onUpdate(node.id, {
+                        ...config,
+                        message_mode: "template",
+                        template_id: tpl.id,
+                        template_name: tpl.name,
+                        content: bodyText,
+                        content_type: "text",
+                      });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8"><SelectValue placeholder="Selecione um template" /></SelectTrigger>
+                  <SelectContent>
+                    {metaTemplates.length === 0 && (
+                      <SelectItem value="__empty" disabled>Nenhum template criado</SelectItem>
+                    )}
+                    {metaTemplates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                        <span className="ml-2 text-muted-foreground text-[10px]">({t.category})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {config.template_id && config.content && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+                  <p className="text-xs text-foreground whitespace-pre-wrap line-clamp-6">{config.content}</p>
+                </div>
+              )}
+
+              {!config.template_id && (
+                <p className="text-xs text-amber-500">Selecione um template para configurar esta mensagem.</p>
+              )}
+            </>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {nodeType === "delay" && (
         <>
