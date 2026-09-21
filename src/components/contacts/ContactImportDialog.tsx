@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Switch } from "@/components/ui/switch";
 import CsvUploader from "@/components/broadcasts/CsvUploader";
 import { useContacts } from "@/hooks/useContacts";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const CONTACT_FIELDS = [
@@ -95,18 +96,11 @@ Colunas que não correspondem a nenhum campo devem ser marcadas como "custom_fie
 
 Responda APENAS com um JSON no formato: {"mapping": {"campo_contato": "coluna_csv"}, "custom_fields": ["coluna1", "coluna2"]}`;
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-column-mapper`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({ headers, sampleRows }),
+      const { data, error } = await supabase.functions.invoke("ai-column-mapper", {
+        body: { headers, sampleRows },
       });
+      if (error) throw error;
 
-      if (!response.ok) throw new Error("Erro na IA");
-
-      const data = await response.json();
       if (data.mapping) setMapping(data.mapping);
       if (data.custom_fields) setCustomFieldCols(data.custom_fields);
       toast.success("Colunas mapeadas pela IA!");

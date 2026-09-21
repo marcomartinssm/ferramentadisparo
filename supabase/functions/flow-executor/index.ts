@@ -1,3 +1,5 @@
+import { exigirAcesso } from "../_shared/auth.ts";
+import { aiFetch } from "../_shared/ai.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -38,6 +40,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const bloqueio = await exigirAcesso(req, corsHeaders);
+  if (bloqueio) return bloqueio;
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -326,8 +331,6 @@ Deno.serve(async (req) => {
         let userMessage = variables.last_message || "";
 
         try {
-          const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-          if (!lovableApiKey) throw new Error("LOVABLE_API_KEY not configured");
 
           const modelMap: Record<string, string> = {
             "gemini-2.5-flash": "google/gemini-2.5-flash",
@@ -336,11 +339,10 @@ Deno.serve(async (req) => {
             "gpt-5": "openai/gpt-5",
           };
 
-          const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          const aiResponse = await aiFetch("claude", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${lovableApiKey}`,
             },
             body: JSON.stringify({
               model: modelMap[model] || "google/gemini-2.5-flash",

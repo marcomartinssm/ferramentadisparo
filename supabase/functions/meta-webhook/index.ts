@@ -19,7 +19,14 @@ Deno.serve(async (req) => {
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
 
-    const verifyToken = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
+    // O token de verificação fica salvo na tabela app_settings (aparece na tela Canais de WhatsApp)
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: setting } = await admin
+      .from("app_settings")
+      .select("value")
+      .eq("key", "meta_webhook_verify_token")
+      .maybeSingle();
+    const verifyToken = setting?.value || Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
 
     if (mode === "subscribe" && token === verifyToken) {
       console.log("[meta-webhook] Verification successful");

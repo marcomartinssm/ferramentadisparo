@@ -1,3 +1,5 @@
+import { exigirAcesso } from "../_shared/auth.ts";
+import { aiFetch } from "../_shared/ai.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -8,12 +10,12 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
+  const bloqueio = await exigirAcesso(req, corsHeaders);
+  if (bloqueio) return bloqueio;
+
   try {
     const { base_text, instruction, count = 10, mode = 'full' } = await req.json();
     if (!base_text && mode !== 'generate_copy') throw new Error('base_text is required');
-
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY not configured');
 
     const isFragment = mode === 'fragment';
     const isRewrite = mode === 'rewrite';
@@ -144,10 +146,9 @@ ${instruction ? `Instrução adicional: ${instruction}\n` : ''}
 Gere ${Math.min(count, 20)} variações únicas desta mensagem.`;
     }
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await aiFetch('claude', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

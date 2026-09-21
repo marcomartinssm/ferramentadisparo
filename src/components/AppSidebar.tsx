@@ -1,9 +1,11 @@
 import { NavLink, useLocation } from "react-router-dom";
 import {
+  LogOut,
   LayoutDashboard, Users, Megaphone, Zap, FileText,
   Smartphone, ChevronLeft, GitBranch, HelpCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 import viaIcon from "@/assets/icon-via.png";
 import viaLogoWhite from "@/assets/logo-via-white.png";
 
@@ -118,6 +120,12 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
 
       {/* Bottom */}
       <div className="border-t border-sidebar-border p-2 space-y-0.5">
+        <button
+          onClick={() => supabase.auth.signOut()}
+          className="sidebar-item w-full">
+          <LogOut className="w-[18px] h-[18px] shrink-0" />
+          {!collapsed && <span>Sair</span>}
+        </button>
         <button
           onClick={onToggle}
           className="sidebar-item w-full">

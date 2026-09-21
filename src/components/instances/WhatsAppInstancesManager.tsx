@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { Plus, RefreshCw, Wifi, WifiOff, Trash2, Star, MoreVertical, Smartphone, Cloud, Settings2, Power, Eye, EyeOff, Copy } from 'lucide-react';
+import { Plus, RefreshCw, Wifi, WifiOff, Trash2, Star, MoreVertical, Smartphone, Cloud, Settings2, Power, Copy } from 'lucide-react';
 import { useWhatsAppInstances, WhatsAppInstance } from '@/hooks/useWhatsAppInstances';
 import { AddInstanceDialog } from './AddInstanceDialog';
 import { Button } from '@/components/ui/button';
@@ -38,7 +38,6 @@ export function WhatsAppInstancesManager() {
     webhook_enabled: true
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [showToken, setShowToken] = useState(false);
 
   // Fetch meta_connection data when settings modal opens
   const { data: metaConnection } = useQuery({
@@ -47,7 +46,7 @@ export function WhatsAppInstancesManager() {
       if (!settingsInstance?.meta_connection_id) return null;
       const { data, error } = await supabase
         .from('meta_connections')
-        .select('*')
+        .select('id, waba_id, phone_number_id, is_active')
         .eq('id', settingsInstance.meta_connection_id)
         .single();
       if (error) throw error;
@@ -56,10 +55,23 @@ export function WhatsAppInstancesManager() {
     enabled: !!settingsInstance?.meta_connection_id,
   });
 
+  // Token que a Meta usa para confirmar o webhook (gerado no banco, tabela app_settings)
+  const { data: webhookVerifyToken } = useQuery({
+    queryKey: ['webhook-verify-token'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'meta_webhook_verify_token')
+        .maybeSingle();
+      return data?.value ?? '';
+    },
+    enabled: !!settingsInstance,
+  });
+
   const openSettingsModal = (instance: WhatsAppInstance) => {
     const meta = instance.metadata as Record<string, unknown> ?? {};
     setSettingsInstance(instance);
-    setShowToken(false);
     setSettingsValues({
       webhook_enabled: meta.webhook_enabled !== false
     });
@@ -102,11 +114,6 @@ export function WhatsAppInstancesManager() {
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copiado!`);
-  };
-
-  const maskToken = (token: string) => {
-    if (token.length <= 12) return '••••••••';
-    return token.slice(0, 6) + '••••••' + token.slice(-6);
   };
 
   const getStatusBadge = (status: string) => {
@@ -244,15 +251,7 @@ export function WhatsAppInstancesManager() {
 
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Access Token</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-xs text-foreground">
-                          {showToken ? metaConnection.access_token : maskToken(metaConnection.access_token)}
-                        </span>
-                        <button onClick={() => setShowToken(!showToken)} className="text-muted-foreground hover:text-foreground">
-                          {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button onClick={() => copyToClipboard(metaConnection.access_token, 'Access Token')} className="text-muted-foreground hover:text-foreground"><Copy className="w-3.5 h-3.5" /></button>
-                      </div>
+                      <span className="text-xs text-muted-foreground">Guardado com segurança</span>
                     </div>
                   </>
                 )}
@@ -276,8 +275,8 @@ export function WhatsAppInstancesManager() {
                 <div>
                   <span className="text-xs text-muted-foreground block mb-1">Verify Token</span>
                   <div className="flex items-center gap-1.5">
-                    <code className="text-xs font-mono text-foreground bg-muted px-2 py-1 rounded">zapdisparo-webhook-verify</code>
-                    <button onClick={() => copyToClipboard('zapdisparo-webhook-verify', 'Verify Token')} className="text-muted-foreground hover:text-foreground shrink-0"><Copy className="w-3.5 h-3.5" /></button>
+                    <code className="text-xs font-mono text-foreground bg-muted px-2 py-1 rounded break-all">{webhookVerifyToken}</code>
+                    <button onClick={() => copyToClipboard(webhookVerifyToken ?? '', 'Verify Token')} className="text-muted-foreground hover:text-foreground shrink-0"><Copy className="w-3.5 h-3.5" /></button>
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">Assine o campo <strong>messages</strong> nos webhooks do Meta.</p>

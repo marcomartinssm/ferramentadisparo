@@ -1,3 +1,4 @@
+import { exigirAcesso } from "../_shared/auth.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -12,6 +13,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const bloqueio = await exigirAcesso(req, corsHeaders);
+  if (bloqueio) return bloqueio;
 
   try {
     const { templateData, metaConnectionId, isEdit, templateId, metaTemplateId } = await req.json();
