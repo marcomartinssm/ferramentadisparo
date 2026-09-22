@@ -5,6 +5,7 @@ import { useWhatsAppInstances, WhatsAppInstance } from '@/hooks/useWhatsAppInsta
 import { AddInstanceDialog } from './AddInstanceDialog';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from
 '@/components/ui/dropdown-menu';
@@ -68,6 +69,28 @@ export function WhatsAppInstancesManager() {
     },
     enabled: !!settingsInstance,
   });
+
+  const [trocandoToken, setTrocandoToken] = useState(false);
+  const [novoToken, setNovoToken] = useState('');
+  const [salvandoToken, setSalvandoToken] = useState(false);
+
+  // Troca o token da Meta sem precisar recriar o canal
+  const salvarNovoToken = async () => {
+    if (!metaConnection?.id || !novoToken.trim()) return;
+    setSalvandoToken(true);
+    const { error } = await supabase
+      .from('meta_connections')
+      .update({ access_token: novoToken.trim(), updated_at: new Date().toISOString() })
+      .eq('id', metaConnection.id);
+    setSalvandoToken(false);
+    if (error) {
+      toast.error('Não foi possível salvar o token: ' + error.message);
+      return;
+    }
+    toast.success('Token atualizado!');
+    setTrocandoToken(false);
+    setNovoToken('');
+  };
 
   const openSettingsModal = (instance: WhatsAppInstance) => {
     const meta = instance.metadata as Record<string, unknown> ?? {};
@@ -249,9 +272,37 @@ export function WhatsAppInstancesManager() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Access Token</span>
-                      <span className="text-xs text-muted-foreground">Guardado com segurança</span>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Access Token</span>
+                        {!trocandoToken ? (
+                          <button onClick={() => setTrocandoToken(true)} className="text-xs text-primary hover:underline">
+                            Trocar token
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Cole o token novo</span>
+                        )}
+                      </div>
+                      {trocandoToken ? (
+                        <div className="flex gap-2">
+                          <Input
+                            type="password"
+                            value={novoToken}
+                            onChange={(e) => setNovoToken(e.target.value)}
+                            placeholder="EAAG..."
+                            className="h-8 text-xs font-mono"
+                            autoComplete="off"
+                          />
+                          <Button size="sm" className="h-8" disabled={!novoToken.trim() || salvandoToken} onClick={salvarNovoToken}>
+                            Salvar
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-8" onClick={() => { setTrocandoToken(false); setNovoToken(''); }}>
+                            Cancelar
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Guardado com segurança (não é exibido).</p>
+                      )}
                     </div>
                   </>
                 )}

@@ -40,6 +40,9 @@ Deno.serve(async (req) => {
       numeros_do_waba: await get(`${c.waba_id}/phone_numbers?fields=id,display_phone_number,verified_name,status`),
       apps_inscritos_no_waba: await get(`${c.waba_id}/subscribed_apps`),
       app_do_token: await get(`app?fields=id,name`),
+      permissoes_do_token: ((await get(`debug_token?input_token=${encodeURIComponent(t)}`))?.data?.granular_scopes || [])
+        .filter((g: any) => String(g.scope).startsWith("whatsapp") || g.scope === "business_management")
+        .map((g: any) => ({ permissao: g.scope, contas: g.target_ids || "todas/nenhuma listada" })),
     });
   }
 
