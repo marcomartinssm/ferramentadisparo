@@ -36,7 +36,15 @@ Deno.serve(async (req) => {
     resultado.push({
       inscricao,
       cadastrado: { waba_id: c.waba_id, phone_number_id: c.phone_number_id },
-      waba: await get(`${c.waba_id}?fields=id,name`),
+      waba: await get(`${c.waba_id}?fields=id,name,owner_business_info,on_behalf_of_business_info,account_review_status,business_verification_status`),
+      numero: await get(`${c.phone_number_id}?fields=id,display_phone_number,platform_type,account_mode,status,code_verification_status,name_status,quality_rating,messaging_limit_tier`),
+      usuario_do_token: await get(`me?fields=id,name`),
+      usuarios_com_acesso_ao_waba: await (async () => {
+        const w = await get(`${c.waba_id}?fields=owner_business_info`);
+        const b = w?.owner_business_info?.id;
+        return b ? await get(`${c.waba_id}/assigned_users?business=${b}`) : null;
+      })(),
+      app_info: await get(`app?fields=id,name,business`),
       numeros_do_waba: await get(`${c.waba_id}/phone_numbers?fields=id,display_phone_number,verified_name,status`),
       apps_inscritos_no_waba: await get(`${c.waba_id}/subscribed_apps`),
       app_do_token: await get(`app?fields=id,name`),

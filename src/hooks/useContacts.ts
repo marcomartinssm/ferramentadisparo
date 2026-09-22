@@ -1,3 +1,4 @@
+import { normalizeBrazilianPhone } from '@/lib/phoneUtils';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -226,10 +227,39 @@ export function useContacts(listId?: string | null) {
 
   const importContacts = useMutation({
     mutationFn: async (contacts: Array<{ name: string; phone: string; company?: string; city?: string; tags?: string[]; list_ids?: string[]; status?: string; custom_fields?: Record<string, string> }>) => {
+      // 1) Padroniza os telefones e junta as linhas repetidas da planilha.
+      //    Telefone repetido no mesmo envio faz o banco recusar o lote inteiro.
+      type Linha = (typeof contacts)[number];
+      const porTelefone = new Map<string, Linha>();
+      let ignorados = 0;
+      for (const c of contacts) {
+        const digitos = String(c.phone || '').replace(/\D/g, '');
+        const phone = normalizeBrazilianPhone(digitos) ?? (digitos.length >= 10 && digitos.length <= 15 ? digitos : null);
+        if (!phone) { ignorados++; continue; }
+        const existente = porTelefone.get(phone);
+        if (!existente) {
+          porTelefone.set(phone, { ...c, phone });
+          continue;
+        }
+        porTelefone.set(phone, {
+          ...existente,
+          name: existente.name && existente.name !== 'Sem nome' ? existente.name : c.name,
+          company: existente.company || c.company,
+          city: existente.city || c.city,
+          status: existente.status || c.status,
+          tags: Array.from(new Set([...(existente.tags || []), ...(c.tags || [])])),
+          list_ids: Array.from(new Set([...(existente.list_ids || []), ...(c.list_ids || [])])),
+          custom_fields: { ...(c.custom_fields || {}), ...(existente.custom_fields || {}) },
+        });
+      }
+      const unicos = Array.from(porTelefone.values());
+      const repetidos = contacts.length - ignorados - unicos.length;
+
+      // 2) Salva em lotes
       const BATCH = 500;
       let total = 0;
-      for (let i = 0; i < contacts.length; i += BATCH) {
-        const batch = contacts.slice(i, i + BATCH);
+      for (let i = 0; i < unicos.length; i += BATCH) {
+        const batch = unicos.slice(i, i + BATCH);
         const rows = batch.map(c => ({
           name: c.name || "Sem nome",
           phone: c.phone,
@@ -241,30 +271,35 @@ export function useContacts(listId?: string | null) {
           custom_fields: c.custom_fields || {},
         }));
 
-        const { data, error } = await supabase.from('contacts').upsert(rows, { onConflict: 'phone' }).select();
+        const { data, error } = await supabase.from('contacts').upsert(rows, { onConflict: 'phone' }).select('id, phone');
         if (error) throw error;
         total += data?.length || 0;
 
-        // Insert junction records for contacts with list_ids
+        // Liga cada contato às listas escolhidas (pelo telefone, não pela posição)
+        const idPorTelefone = new Map((data || []).map((d: any) => [d.phone, d.id]));
         const junctionRows: { contact_id: string; list_id: string }[] = [];
-        (data || []).forEach((contact: any, idx: number) => {
-          const original = batch[idx];
-          if (original.list_ids && original.list_ids.length > 0) {
-            original.list_ids.forEach(lid => {
-              junctionRows.push({ contact_id: contact.id, list_id: lid });
-            });
-          }
+        batch.forEach(original => {
+          const contactId = idPorTelefone.get(original.phone);
+          if (!contactId) return;
+          (original.list_ids || []).forEach(lid => junctionRows.push({ contact_id: contactId, list_id: lid }));
         });
         if (junctionRows.length > 0) {
-          await supabase.from('contact_list_members').upsert(junctionRows, { onConflict: 'contact_id,list_id' });
+          const { error: listErr } = await supabase
+            .from('contact_list_members')
+            .upsert(junctionRows, { onConflict: 'contact_id,list_id', ignoreDuplicates: true });
+          if (listErr) throw listErr;
         }
       }
-      return total;
+      return { total, ignorados, repetidos };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ total, ignorados, repetidos }) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['contact-lists'] });
-      toast.success(`${count} contatos importados`);
+      const extras = [
+        repetidos > 0 ? `${repetidos} repetidos juntados` : '',
+        ignorados > 0 ? `${ignorados} sem telefone válido ignorados` : '',
+      ].filter(Boolean).join(' · ');
+      toast.success(`${total} contatos importados${extras ? ` (${extras})` : ''}`);
     },
     onError: (err: Error) => toast.error(`Erro na importação: ${err.message}`),
   });
