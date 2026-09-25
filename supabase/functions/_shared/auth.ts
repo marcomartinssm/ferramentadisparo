@@ -14,7 +14,10 @@ export async function exigirAcesso(req: Request, corsHeaders: Record<string, str
 
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-  if (token && token === serviceKey) return null;
+  // Chamada interna entre funções: com as chaves novas do Supabase (sb_secret_...),
+  // o supabase-js manda a chave só no cabeçalho "apikey", sem "Authorization".
+  const apikey = req.headers.get("apikey") || "";
+  if ((token && token === serviceKey) || (apikey && apikey === serviceKey)) return null;
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey);
 

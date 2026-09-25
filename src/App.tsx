@@ -19,6 +19,7 @@ import CreateTemplate from "@/pages/CreateTemplate";
 import EditTemplate from "@/pages/EditTemplate";
 import Help from "@/pages/Help";
 import Conversations from "@/pages/Conversations";
+import SendLogs from "@/pages/SendLogs";
 
 import NotFound from "./pages/NotFound";
 
@@ -47,6 +48,7 @@ const App = () => (
             <Route path="/templates/create" element={<CreateTemplate />} />
             <Route path="/templates/:id/edit" element={<EditTemplate />} />
             
+            <Route path="/registros" element={<SendLogs />} />
             <Route path="/help" element={<Help />} />
             
           </Route>

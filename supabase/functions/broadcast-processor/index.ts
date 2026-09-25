@@ -303,7 +303,7 @@ serve(async (req) => {
           supabase, 'send-meta-message', sendPayload, effectiveTimeout
         );
 
-        if (sendError) throw new Error(sendError.message || 'Send function error');
+        if (sendError) throw new Error(await motivoDoErro(sendError));
         if (!sendResult?.success) throw new Error(sendResult?.error || 'Send failed');
 
         await supabase.from('broadcast_recipients')
@@ -397,6 +397,16 @@ function jsonResponse(body: Record<string, unknown>) {
 
 function selfInvoke(supabase: any, campaign_id: string) {
   supabase.functions.invoke('broadcast-processor', { body: { campaign_id } }).catch(console.error);
+}
+
+// A função de envio devolve o motivo real no corpo da resposta; o supabase-js só mostra "non-2xx"
+async function motivoDoErro(err: any): Promise<string> {
+  try {
+    const corpo = await err?.context?.json();
+    if (corpo?.error) return String(corpo.error);
+  } catch { /* corpo não era JSON */ }
+  const status = err?.context?.status ? ` (HTTP ${err.context.status})` : '';
+  return (err?.message || 'Falha ao chamar a função de envio') + status;
 }
 
 async function invokeWithTimeout(

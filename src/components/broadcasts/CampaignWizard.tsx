@@ -476,7 +476,8 @@ const CampaignWizard: React.FC<CampaignWizardProps> = ({ onClose, onCampaignCrea
           } else {
             setSelectedTemplateHeaderText('');
             setSelectedTemplateHeaderMediaType(fmt);
-            setSelectedTemplateHeaderMediaUrl(headerComp.example?.header_handle?.[0] || '');
+            // O vídeo/imagem do template fica em mediaUrl (header_handle é só o código interno da Meta)
+            setSelectedTemplateHeaderMediaUrl(headerComp.mediaUrl || '');
           }
         } else {
           setSelectedTemplateHeaderText('');

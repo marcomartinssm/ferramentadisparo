@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LogOut,
   LayoutDashboard, Users, Megaphone, Zap, FileText,
-  Smartphone, ChevronLeft, GitBranch, HelpCircle, MessageCircle
+  Smartphone, ChevronLeft, GitBranch, HelpCircle, MessageCircle, ScrollText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,6 +40,7 @@ const navGroups = [
     icon: Smartphone,
     items: [
       { path: "/instances", label: "Canais de WhatsApp", icon: Smartphone },
+      { path: "/registros", label: "Registros de envio", icon: ScrollText },
     ],
   },
   {

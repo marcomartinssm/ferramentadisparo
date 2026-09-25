@@ -22,7 +22,13 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
+  const inicio = Date.now();
+  let corpoPedido: any = {};
+  let metaStatus: number | null = null;
+  let metaResult: any = null;
+
   try {
+    corpoPedido = await req.json();
     const {
       instance_id,
       meta_connection_id,
@@ -37,7 +43,7 @@ Deno.serve(async (req) => {
       header_media,
       source = "flow",
       source_id = null,
-    } = await req.json();
+    } = corpoPedido;
 
     if (!phone_number) throw new Error("phone_number is required");
 
@@ -93,13 +99,20 @@ Deno.serve(async (req) => {
       const components: any[] = [];
       const vars = template_variables || {};
 
+      // Se o cabeçalho de mídia veio sem endereço, usa o que está salvo no template
+      let midiaCabecalho = header_media?.type && header_media?.url ? header_media : null;
+      if (!midiaCabecalho) {
+        midiaCabecalho = await midiaDoTemplate(supabase, template_name, template_language);
+        if (midiaCabecalho) corpoPedido.header_media = midiaCabecalho;
+      }
+
       // Media header
-      if (header_media?.type && header_media?.url) {
-        const mediaType = header_media.type.toLowerCase();
+      if (midiaCabecalho) {
+        const mediaType = midiaCabecalho.type.toLowerCase();
         const param: any = { type: mediaType };
-        if (mediaType === "image") param.image = { link: header_media.url };
-        else if (mediaType === "video") param.video = { link: header_media.url };
-        else if (mediaType === "document") param.document = { link: header_media.url };
+        if (mediaType === "image") param.image = { link: midiaCabecalho.url };
+        else if (mediaType === "video") param.video = { link: midiaCabecalho.url };
+        else if (mediaType === "document") param.document = { link: midiaCabecalho.url };
         components.push({ type: "header", parameters: [param] });
       } else if (vars.header?.length > 0) {
         components.push({
@@ -168,15 +181,16 @@ Deno.serve(async (req) => {
       }
     );
 
-    const metaResult = await metaResponse.json();
+    metaStatus = metaResponse.status;
+    metaResult = await metaResponse.json();
     console.log(`[send-meta-message] Meta response: ${JSON.stringify(metaResult).substring(0, 500)}`);
 
     if (!metaResponse.ok) {
-      const errorMsg = metaResult?.error?.message || "Unknown Meta API error";
-      throw new Error(`Meta API error (${metaResponse.status}): ${errorMsg}`);
+      throw new Error(traduzirErroMeta(metaResult?.error, metaResponse.status));
     }
 
     const messageId = metaResult?.messages?.[0]?.id || null;
+    await registrarEnvio(supabase, { corpoPedido, sucesso: true, metaStatus, metaResult, messageId, inicio });
 
     // Registra a mensagem enviada na conversa do contato (tela Conversas)
     try {
@@ -189,7 +203,7 @@ Deno.serve(async (req) => {
           source,
           source_id,
           instance_id: instance_id || null,
-          media_url: header_media?.url || media_url || null,
+          media_url: corpoPedido.header_media?.url || media_url || null,
           message_id: messageId,
           message_type,
           status: "sent",
@@ -206,6 +220,7 @@ Deno.serve(async (req) => {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error(`[send-meta-message] Error: ${message}`);
+    await registrarEnvio(supabase, { corpoPedido, sucesso: false, metaStatus, metaResult, erro: message, inicio });
     return new Response(
       JSON.stringify({ success: false, error: message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -234,4 +249,67 @@ async function encontrarOuCriarContato(supabase: any, phone: string): Promise<st
     .select("id")
     .maybeSingle();
   return novo?.id || null;
+}
+
+// Busca a mídia do cabeçalho (vídeo/imagem/documento) salva no template aprovado
+async function midiaDoTemplate(supabase: any, nome: string, idioma?: string) {
+  if (!nome) return null;
+  let q = supabase.from("meta_templates").select("components, language").eq("name", nome);
+  if (idioma) q = q.eq("language", idioma);
+  const { data } = await q.limit(1).maybeSingle();
+  const header = (Array.isArray(data?.components) ? data.components : []).find((c: any) => c.type === "HEADER");
+  if (header && ["IMAGE", "VIDEO", "DOCUMENT"].includes(header.format) && header.mediaUrl) {
+    return { type: header.format.toLowerCase(), url: header.mediaUrl };
+  }
+  return null;
+}
+
+// Explica em português os erros mais comuns da Meta
+function traduzirErroMeta(erro: any, http: number): string {
+  const codigos: Record<number, string> = {
+    200: "A Meta recusou por falta de permissão de envio no app/token.",
+    190: "Token da Meta vencido ou inválido. Troque o token em Canais de WhatsApp.",
+    131047: "Fora da janela de 24h: o cliente não respondeu nas últimas 24 horas. Use um template.",
+    131026: "Número sem WhatsApp ou não pode receber mensagens.",
+    131049: "A Meta segurou esta mensagem de marketing para não cansar o cliente.",
+    131050: "O cliente bloqueou mensagens de marketing.",
+    132000: "Quantidade de variáveis diferente da aprovada no template.",
+    132001: "Template não existe ou ainda não foi aprovado nesse idioma.",
+    132012: "Formato do parâmetro diferente do aprovado (ex.: faltou o vídeo/imagem do cabeçalho).",
+    133010: "Número do WhatsApp não está registrado na API.",
+  };
+  const base = codigos[erro?.code] || erro?.error_data?.details || erro?.message || "Erro desconhecido da Meta";
+  return `Meta (${http}${erro?.code ? `, código ${erro.code}` : ""}): ${base}`;
+}
+
+// Grava cada tentativa na tabela disparo_log_envios (sem token)
+async function registrarEnvio(supabase: any, info: {
+  corpoPedido: any; sucesso: boolean; metaStatus: number | null; metaResult: any;
+  messageId?: string | null; erro?: string; inicio: number;
+}) {
+  try {
+    const p = info.corpoPedido || {};
+    await supabase.from("disparo_log_envios").insert({
+      origem: p.source || "flow",
+      origem_id: p.source_id || null,
+      telefone: String(p.phone_number || "").replace(/\D/g, "") || null,
+      tipo: p.message_type || "text",
+      template: p.template_name || null,
+      sucesso: info.sucesso,
+      http_status: info.metaStatus,
+      erro_codigo: info.metaResult?.error?.code ?? null,
+      erro: info.erro || null,
+      message_id: info.messageId || null,
+      pedido: {
+        message_type: p.message_type, template_name: p.template_name, template_language: p.template_language,
+        header_media: p.header_media || null, template_variables: p.template_variables || null,
+        content: typeof p.content === "string" ? p.content.slice(0, 500) : null,
+        instance_id: p.instance_id || null, meta_connection_id: p.meta_connection_id || null,
+      },
+      resposta: info.metaResult,
+      duracao_ms: Date.now() - info.inicio,
+    });
+  } catch (e) {
+    console.warn(`[send-meta-message] Falha ao gravar registro: ${e}`);
+  }
 }

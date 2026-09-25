@@ -33,7 +33,56 @@ Deno.serve(async (req) => {
       });
       inscricao = await r.json();
     }
+    // Registra (reconecta) o número na API da Meta, criando o PIN de verificação em duas etapas
+    let registro: any = null;
+    if (corpo?.acao === "registrar_numero" && corpo?.pin) {
+      const r = await fetch(`${GRAPH}/${c.phone_number_id}/register`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ messaging_product: "whatsapp", pin: String(corpo.pin) }),
+      });
+      registro = { http: r.status, resposta: await r.json() };
+    }
+    // Pede o código de verificação do número (por ligação ou SMS)
+    let pedido_codigo: any = null;
+    if (corpo?.acao === "pedir_codigo") {
+      const r = await fetch(`${GRAPH}/${c.phone_number_id}/request_code`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ code_method: corpo.metodo || "VOICE", language: "pt_BR" }),
+      });
+      pedido_codigo = { http: r.status, resposta: await r.json() };
+    }
+    // Confirma o código recebido
+    let verificacao: any = null;
+    if (corpo?.acao === "verificar_codigo" && corpo?.codigo) {
+      const r = await fetch(`${GRAPH}/${c.phone_number_id}/verify_code`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ code: String(corpo.codigo) }),
+      });
+      verificacao = { http: r.status, resposta: await r.json() };
+    }
+    // Teste de envio que devolve a resposta completa da Meta (com os detalhes do erro)
+    let teste_envio: any = null;
+    if (corpo?.acao === "testar_envio" && corpo?.para) {
+      const r = await fetch(`${GRAPH}/${c.phone_number_id}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: String(corpo.para),
+          type: "text",
+          text: { body: corpo.texto || "Teste" },
+        }),
+      });
+      teste_envio = { http: r.status, resposta: await r.json() };
+    }
     resultado.push({
+      pedido_codigo,
+      verificacao,
+      registro,
+      teste_envio,
       inscricao,
       cadastrado: { waba_id: c.waba_id, phone_number_id: c.phone_number_id },
       waba: await get(`${c.waba_id}?fields=id,name,owner_business_info,on_behalf_of_business_info,account_review_status,business_verification_status`),
@@ -48,6 +97,7 @@ Deno.serve(async (req) => {
       numeros_do_waba: await get(`${c.waba_id}/phone_numbers?fields=id,display_phone_number,verified_name,status`),
       apps_inscritos_no_waba: await get(`${c.waba_id}/subscribed_apps`),
       app_do_token: await get(`app?fields=id,name`),
+      ficha_do_token: (await get(`debug_token?input_token=${encodeURIComponent(t)}`))?.data,
       permissoes_do_token: ((await get(`debug_token?input_token=${encodeURIComponent(t)}`))?.data?.granular_scopes || [])
         .filter((g: any) => String(g.scope).startsWith("whatsapp") || g.scope === "business_management")
         .map((g: any) => ({ permissao: g.scope, contas: g.target_ids || "todas/nenhuma listada" })),
